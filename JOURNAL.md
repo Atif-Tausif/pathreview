@@ -17,3 +17,17 @@ The plan-execute loop in the agent orchestrator wraps each tool call in a broad 
 **Setup confirmation:** [x] App runs locally at localhost:5173
 
 **Cohort ledger:** [ ] Issue added to cohort ledger
+
+## Week 8 — Reproduction & solution planning
+
+**Reproduction commit link:** [ba2cf7f](https://github.com/ascherj/pathreview/commit/ba2cf7f) (branch `fix/44-orchestrator-silent-tool-exceptions`)
+
+**Reproduction summary:**
+Added `tests/unit/test_orchestrator.py`, which runs `Orchestrator.run()` with a tool that always raises `RuntimeError`. The test fails against current code: `run()` returns normally with no top-level failure indicator — the exception is caught in the plan-execute loop (`orchestrator.py:60-62`) and buried inside `tool_results["tech_detector"]` as an `{"error": ..., "success": False}` entry, indistinguishable in shape from a successful tool's output.
+
+**PLAN.md link:** [PLAN.md](./PLAN.md)
+
+**Walkthrough video (recommended):**
+
+**Blockers or open questions:**
+Still deciding whether a fully-failed run should raise from `run()` entirely vs. always return normally with a `success: False` flag (see Risks & unknowns in PLAN.md). Also need to confirm via grep whether `RetryContext` in `error_handling.py` is dead code before Week 9, since it looks unused outside the module.
