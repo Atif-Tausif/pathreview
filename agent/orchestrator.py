@@ -38,7 +38,14 @@ class Orchestrator:
             profile_data: Profile data dict with github_username, projects, etc.
 
         Returns:
-            Dict with analysis results from all tools
+            Dict with keys:
+                profile_id: The profile identifier passed in
+                success: False if any tool in the plan failed, True otherwise
+                failed_tools: Names of tools that raised during execution
+                tool_results: Per-tool results, keyed by tool name (failed
+                    tools have an {"error": ..., "success": False} entry)
+                cached_results: All results currently held in the in-session
+                    context cache
         """
         logger.info("orchestrator_start", profile_id=profile_id)
 
@@ -52,6 +59,7 @@ class Orchestrator:
 
         # Execute plan
         results = {}
+        failed_tools = []
         for tool_name, tool_input in plan:
             try:
                 result = self._execute_tool(tool_name, tool_input)
@@ -62,16 +70,24 @@ class Orchestrator:
             except Exception as e:
                 logger.error("tool_execution_failed", tool=tool_name, error=str(e))
                 results[tool_name] = {"error": str(e), "success": False}
+                failed_tools.append(tool_name)
 
         # Persist state
         if self.session_store:
             session_state.update(results)
             self.session_store.set(profile_id, session_state)
 
-        logger.info("orchestrator_complete", profile_id=profile_id, tools_executed=len(results))
+        logger.info(
+            "orchestrator_complete",
+            profile_id=profile_id,
+            tools_executed=len(results),
+            tools_failed=len(failed_tools),
+        )
 
         return {
             "profile_id": profile_id,
+            "success": not failed_tools,
+            "failed_tools": failed_tools,
             "tool_results": results,
             "cached_results": self.context_manager.get_all_results(),
         }
