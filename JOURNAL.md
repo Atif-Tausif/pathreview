@@ -48,3 +48,22 @@ Open a draft PR for early feedback, finish self-review against `docs/CONTRIBUTIN
 
 **Blockers:**
 None currently.
+
+---
+
+### Check-in 2 (end of week)
+
+**PR link:** [#652](https://github.com/ascherj/pathreview/pull/652)
+
+**Branch:** `fix/44-orchestrator-silent-tool-exceptions`
+
+**What you built:**
+`Orchestrator.run()`'s plan-execute loop now tracks which tools failed and returns top-level `success: bool` / `failed_tools: list[str]` keys, so a caller can tell in one check whether anything went wrong instead of having to inspect every entry in `tool_results`. This covers both ways a tool can fail: raising an exception, and returning `ToolResult(success=False, ...)` without raising at all (which the first version of the fix missed — a tool like `GitHubTool` reporting a 404 or missing input was silently dropped to an empty dict before this).
+
+**Tests added or updated:**
+Extended `tests/unit/test_orchestrator.py` from the original Week 8 reproduction test to 9 tests total: full success, partial failure, total failure, empty plan, a cached result not being misreported as a failure, session-store persistence, session-store merge with prior state, and — the fix's second pass — a tool that reports failure via `ToolResult(success=False, ...)` without raising. Added `tests/unit/test_error_handling.py` (didn't exist before), 3 tests confirming `retry_with_backoff` re-raises rather than swallowing after exhausting retries, since the orchestrator fix depends on that contract.
+
+**Self-review confirmation:** [x] make check passes  [x] make test-unit passes
+(Both pass with only pre-existing, documented failures unrelated to this change — see the PR description's Testing section for the exact baseline: 54 pre-existing unit test failures, 175 pre-existing ruff errors, 49 files failing black, and a pre-existing mypy/numpy stub mismatch, none in `agent/orchestrator.py` or `agent/error_handling.py`.)
+
+**Draft PR feedback received from:** none yet — opened as draft for Slack peer/mentor review before Sunday's deadline. One round of self-review did catch a real gap (tools failing via `ToolResult(success=False, ...)` without raising weren't counted), which is already fixed and included above.
