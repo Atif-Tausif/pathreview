@@ -27,7 +27,12 @@ if TYPE_CHECKING:
 
 
 class AlwaysFailsTool(BaseTool):
-    """A tool that always raises, simulating a broken external dependency."""
+    """A tool that always raises, simulating a broken external dependency.
+
+    Unlike real tools (which each hardcode a fixed `name`), this takes
+    `name` in its constructor so the same class can stand in for whichever
+    tool slot a given test needs to fail.
+    """
 
     def __init__(self, name: str = "tech_detector") -> None:
         self.name = name
@@ -38,7 +43,8 @@ class AlwaysFailsTool(BaseTool):
 
 
 class AlwaysSucceedsTool(BaseTool):
-    """A tool that always returns a fixed successful result."""
+    """A tool that always returns a fixed successful result. See AlwaysFailsTool
+    for why `name` is a constructor argument rather than a class attribute."""
 
     def __init__(self, name: str = "tech_detector") -> None:
         self.name = name
@@ -46,6 +52,18 @@ class AlwaysSucceedsTool(BaseTool):
 
     def execute(self, input_data: dict) -> ToolResult:
         return ToolResult(success=True, data={"detected": ["python"]})
+
+
+class ReturnsFailureWithoutRaisingTool(BaseTool):
+    """A tool that reports failure the way GitHubTool does for bad input -
+    returning ToolResult(success=False, ...) instead of raising."""
+
+    def __init__(self, name: str = "tech_detector") -> None:
+        self.name = name
+        self.description = "stub"
+
+    def execute(self, input_data: dict) -> ToolResult:
+        return ToolResult(success=False, data={}, error="missing required input")
 
 
 @pytest.mark.unit
@@ -66,6 +84,35 @@ def test_orchestrator_surfaces_tool_failure() -> None:
 
     assert result["success"] is False
     assert "tech_detector" in result["failed_tools"]
+
+
+@pytest.mark.unit
+def test_orchestrator_counts_tool_returning_failure_without_raising() -> None:
+    """A tool that reports failure via ToolResult(success=False, ...) - without
+    raising - must be counted the same as one that raises.
+
+    Tools like GitHubTool return ToolResult(success=False, data={}, error=...)
+    for expected failure cases (missing input, a 404 from the GitHub API)
+    instead of raising. Before this fix, run()'s try/except only reacted to
+    raised exceptions, so this kind of failure fell through: the try block
+    succeeded, `results[tool_name] = result.data` stored an empty dict, and
+    both `result.success` and `result.error` were silently discarded.
+    """
+    orchestrator = Orchestrator(
+        tools={"tech_detector": ReturnsFailureWithoutRaisingTool(name="tech_detector")}
+    )
+
+    result = orchestrator.run(
+        profile_id="test-profile",
+        profile_data={"files": ["main.py"]},
+    )
+
+    assert result["success"] is False
+    assert "tech_detector" in result["failed_tools"]
+    assert result["tool_results"]["tech_detector"] == {
+        "error": "missing required input",
+        "success": False,
+    }
 
 
 @pytest.mark.unit
@@ -189,4 +236,35 @@ def test_orchestrator_persists_failed_tools_to_session_store() -> None:
     orchestrator.run(profile_id="test-profile", profile_data={"files": ["main.py"]})
 
     assert session_store.saved is not None
+    assert session_store.saved["tech_detector"]["success"] is False
+
+
+@pytest.mark.unit
+def test_orchestrator_merges_new_failure_into_existing_session_state() -> None:
+    """A new failure must be merged into prior session state, not replace it -
+    covers the `session_state = self.session_store.get(profile_id) or {}` /
+    `session_state.update(results)` merge path, which the persistence test
+    above doesn't exercise since its fake `get()` always returns None."""
+
+    class FakeSessionStoreWithPriorState:
+        def __init__(self, prior_state: dict) -> None:
+            self.prior_state = prior_state
+            self.saved: dict | None = None
+
+        def get(self, profile_id: str) -> dict | None:
+            return dict(self.prior_state)
+
+        def set(self, profile_id: str, state: dict) -> None:
+            self.saved = state
+
+    session_store = FakeSessionStoreWithPriorState(prior_state={"readme_scorer": {"score": 8}})
+    orchestrator = Orchestrator(
+        tools={"tech_detector": AlwaysFailsTool()},
+        session_store=cast("SessionStore", session_store),
+    )
+
+    orchestrator.run(profile_id="test-profile", profile_data={"files": ["main.py"]})
+
+    assert session_store.saved is not None
+    assert session_store.saved["readme_scorer"] == {"score": 8}
     assert session_store.saved["tech_detector"]["success"] is False

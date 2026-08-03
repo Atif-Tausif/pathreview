@@ -41,7 +41,8 @@ class Orchestrator:
             Dict with keys:
                 profile_id: The profile identifier passed in
                 success: False if any tool in the plan failed, True otherwise
-                failed_tools: Names of tools that raised during execution
+                failed_tools: Names of tools that failed, whether by raising
+                    or by returning ToolResult(success=False, ...)
                 tool_results: Per-tool results, keyed by tool name (failed
                     tools have an {"error": ..., "success": False} entry)
                 cached_results: All results currently held in the in-session
@@ -58,16 +59,30 @@ class Orchestrator:
             session_state = self.session_store.get(profile_id) or {}
 
         # Execute plan
-        results = {}
-        failed_tools = []
+        results: dict[str, object] = {}
+        failed_tools: list[str] = []
         for tool_name, tool_input in plan:
             try:
                 result = self._execute_tool(tool_name, tool_input)
-                results[tool_name] = result.data if hasattr(result, "data") else result
 
-                logger.info("tool_executed", tool=tool_name, success=True)
+                # A tool can fail two ways: raising (handled below) or
+                # returning ToolResult(success=False, ...) without raising.
+                # Both must count as a failure - otherwise a tool that
+                # deliberately reports failure (e.g. missing input, a 404
+                # from an external API) would be recorded as a success.
+                if hasattr(result, "success") and not result.success:
+                    error_message = getattr(result, "error", None) or "Tool reported failure"
+                    logger.error("tool_reported_failure", tool=tool_name, error=error_message)
+                    results[tool_name] = {"error": error_message, "success": False}
+                    failed_tools.append(tool_name)
+                else:
+                    results[tool_name] = result.data if hasattr(result, "data") else result
+                    logger.info("tool_executed", tool=tool_name, success=True)
 
             except Exception as e:
+                # Covers both a tool raising during execution and
+                # _execute_tool's own failures (e.g. an unregistered tool
+                # name in the plan).
                 logger.error("tool_execution_failed", tool=tool_name, error=str(e))
                 results[tool_name] = {"error": str(e), "success": False}
                 failed_tools.append(tool_name)
