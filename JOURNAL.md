@@ -31,3 +31,20 @@ Added `tests/unit/test_orchestrator.py`, which runs `Orchestrator.run()` with a 
 
 **Blockers or open questions:**
 Still deciding whether a fully-failed run should raise from `run()` entirely vs. always return normally with a `success: False` flag (see Risks & unknowns in PLAN.md). Also need to confirm via grep whether `RetryContext` in `error_handling.py` is dead code before Week 9, since it looks unused outside the module.
+
+## Week 9 — Solution building & PR submission
+
+### Check-in 1 (mid-week)
+
+**Current progress:**
+Resolved the open question from Week 8: went with always returning normally with `success: False` + `failed_tools` rather than raising, since `run()` aggregates several independent tool calls and one bad tool shouldn't blow up the whole profile analysis. Implemented the fix in `agent/orchestrator.py` — `run()`'s plan-execute loop now tracks a `failed_tools` list alongside `results`, and the returned dict gains top-level `success: bool` and `failed_tools: list[str]` keys. Confirmed `RetryContext` in `error_handling.py` is genuinely dead code (grepped the whole repo — referenced nowhere outside its own module); left it alone since removing it is unrelated to this issue, but flagged it as a separate follow-up task rather than silently ignoring it.
+
+Before touching anything, ran `make check` / `make test-unit` and recorded the pre-existing baseline: 54 pre-existing unit test failures (unrelated modules — bias detector, resume parser, review service, etc.), 175 pre-existing ruff errors, 49 files failing black formatting, and mypy stopping early on a pre-existing numpy/Python-version stub incompatibility. None of these touch `agent/orchestrator.py` or `agent/error_handling.py`.
+
+Tests added: extended `tests/unit/test_orchestrator.py` from the single Week 8 reproduction test to 7 tests (full success, partial failure, total failure, empty plan, cache-hit-not-misreported, session-store persistence). Added `tests/unit/test_error_handling.py` (didn't exist before) with 3 tests confirming `retry_with_backoff` actually re-raises after exhausting retries rather than swallowing — the behavior the orchestrator fix depends on. All 10 new/updated tests pass; re-ran the full suite and confirmed no new failures beyond the documented baseline (54 → 53, since the reproduction test itself flipped from failing to passing).
+
+**Next steps:**
+Open a draft PR for early feedback, finish self-review against `docs/CONTRIBUTING.md` (branch name and commit messages already follow convention), fill out the PR template with the pre-existing-failures note, and get peer/mentor feedback in Slack before marking it ready for review.
+
+**Blockers:**
+None currently.

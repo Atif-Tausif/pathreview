@@ -34,9 +34,9 @@ Out of scope (confirmed in Week 7 issue selection): wiring `Orchestrator` into `
 
 ### Risks & unknowns
 
-- Need to confirm no other code currently depends on `run()`'s return dict having *exactly* the three keys it has today (a strict schema check somewhere would break with new keys added). Given `Orchestrator` isn't wired into the API yet, this risk is low, but worth a repo-wide grep for `tool_results` / `cached_results` usage before finalizing.
-- Whether "any tool fails" should also fail the *whole* `run()` call (propagate an exception) is still open — will look for any project convention (docs, related issues, mentor guidance) on how partial failures should surface before locking this in.
-- `retry_with_backoff`'s `RetryContext` class (`error_handling.py:55-100`) appears unused elsewhere in the codebase (only `retry_with_backoff` the decorator is used in `orchestrator.py:191`) — need to confirm via grep before Week 9 in case it's dead code the issue also implicitly wants addressed, or truly out of scope.
+- ~~Need to confirm no other code currently depends on `run()`'s return dict having *exactly* the three keys it has today~~ — resolved: `Orchestrator` isn't wired into the API/review pipeline, and a repo-wide grep found no other code reading `run()`'s return value, so adding keys is safe.
+- ~~Whether "any tool fails" should also fail the *whole* `run()` call~~ — resolved: went with always returning normally plus a `success: False` / `failed_tools` flag, not raising. `run()` aggregates several independent tool calls; one bad tool shouldn't blow up the whole profile analysis, and this keeps the fix backward-compatible for any future caller that only reads `tool_results`.
+- ~~`RetryContext` unused-code question~~ — resolved: confirmed via grep it's referenced nowhere outside `error_handling.py` itself. Left it in place (removing it is unrelated to this issue's scope) but flagged it as a separate cleanup task rather than silently ignoring it.
 
 ### Edge cases
 
