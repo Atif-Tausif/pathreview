@@ -67,3 +67,34 @@ Extended `tests/unit/test_orchestrator.py` from the original Week 8 reproduction
 (Both pass with only pre-existing, documented failures unrelated to this change — see the PR description's Testing section for the exact baseline: 54 pre-existing unit test failures, 175 pre-existing ruff errors, 49 files failing black, and a pre-existing mypy/numpy stub mismatch, none in `agent/orchestrator.py` or `agent/error_handling.py`.)
 
 **Draft PR feedback received from:** none yet — opened as draft for Slack peer/mentor review before Sunday's deadline. One round of self-review did catch a real gap (tools failing via `ToolResult(success=False, ...)` without raising weren't counted), which is already fixed and included above.
+
+## Week 10 — Iteration & reflection
+
+### Reviewer feedback
+
+**Feedback received:** [ ] Yes  [x] No — still awaiting review
+
+**Summary of feedback:**
+[PR #652](https://github.com/ascherj/pathreview/pull/652) has been open and marked ready for review since August 3, with no reviewers assigned and no comments left. I checked the PR again this week specifically for this entry and confirmed there's genuinely nothing to respond to yet, rather than assuming.
+
+**How you responded:**
+Since no feedback landed, I used the week to re-read my own diff with fresh eyes instead of treating "no review" as "nothing to do." One thing I flagged in the PR description but never resolved myself: whether an "unregistered tool name" error should be reported through the same `failed_tools` path as a genuine execution failure, or whether it deserves a distinct category (it's arguably a planning/config bug, not a runtime tool bug). I left it as-is rather than making a unilateral change this late, since it's exactly the kind of judgment call that benefits from a second opinion, and re-flagged it clearly in the PR so a reviewer can weigh in before I'd touch it again.
+
+---
+
+### Reflection
+
+**What was harder than you expected?**
+Deciding *what shape a fix should take* was harder than writing the fix itself. The actual code change — adding `success` and `failed_tools` to the return dict — was small. The hard part was Week 8's open question (raise vs. return-with-flag) and the Week 9 discovery that my first pass missed a whole failure path (`ToolResult(success=False, ...)` returned without raising). Both took longer than the line-count of the eventual diff would suggest, because they required actually understanding every way a tool call can fail in this codebase, not just the one the issue description mentioned.
+
+**What did you learn about working in a large codebase?**
+The pre-existing-failures baseline mattered more than I expected going in. Before touching anything I had to run `make check`/`make test-unit` and write down exactly what was already broken (54 unit test failures, 175 ruff errors, 49 files failing black, a pre-existing mypy/numpy mismatch) so that later I could prove my change didn't add to that pile rather than just eyeballing "tests still pass." In a codebase I'd built myself I'd never have needed that step — I'd know what was broken because I broke it. In someone else's production code, "did I make things worse" isn't answerable without a documented before/after. I also learned to grep before assuming: I initially treated `RetryContext` in `error_handling.py` as possibly load-bearing until I confirmed by searching the whole repo that it's unreferenced dead code — cheap to check, expensive to get wrong.
+
+**How did AI tools help — and where did they fall short?**
+AI assistance was most useful for the mechanical scaffolding: generating the initial spread of test cases (full success, partial failure, empty plan, cache-hit, session-store merge) once I'd decided what the fix should do, and for drafting PLAN.md structure so I could focus my own attention on the actual design question. It fell short exactly where judgment was required — deciding whether `run()` should raise or return a flag, and later noticing that the first fix only handled the "tool raises" path and silently missed "tool returns failure without raising." Both of those needed me to trace actual call sites in `orchestrator.py` and `error_handling.py` and reason about the contract between them; no amount of prompting substituted for reading the code closely enough to notice the gap myself.
+
+**What would you do differently if you started over?**
+I'd write the test for "tool reports failure via `ToolResult(success=False)` without raising" in Week 8, during reproduction, instead of catching it in Week 9's self-review. The issue title emphasizes "catches all exceptions," which anchored my first pass on the raise path and let the non-raising path hide in plain sight. Enumerating all the ways a component can fail before writing any fix — not just the one named in the issue — is a habit I want to carry into the next codebase I touch.
+
+**What are you most proud of from this module?**
+Catching my own bug during self-review rather than needing a reviewer to catch it for me. The first version of the fix looked complete and passed every test I'd written — it was only by deliberately asking "what's another way this could fail that I haven't tested?" that I found the `ToolResult(success=False, ...)` gap, fixed it, and added a test that would have failed against my own first draft. That's the kind of scrutiny I want reviewing my own work to look like going forward, review or no review.
